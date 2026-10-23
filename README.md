@@ -19,8 +19,9 @@ Unified ticketing/social lead inbox for Fly Next.
 ## Run
 1. npm install
 2. Copy .env.example to .env
-3. Set JWT_SECRET and optionally DATABASE_URL
-4. npm start
-5. Open http://localhost:3000
+3. Set a unique, long JWT_SECRET and a unique ADMIN_PASSWORD; do not use the example values in production.
+4. Set DATABASE_URL to your PostgreSQL connection string for persistent storage.
+5. npm start
+6. Open http://localhost:3000
 
-Without DATABASE_URL the app uses demo in-memory data. Production should use PostgreSQL.
+Without DATABASE_URL the app uses demo in-memory data. Leads and messages may be lost when the process restarts. Production must use PostgreSQL and strong secrets. Startup logs warn when these settings are missing.
