@@ -439,35 +439,13 @@ async function createLead() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  if (token) {
-    try {
-      const data = await api("/dashboard");
-      showApp({ name: "Admin" });
-      setupFilters();
-      renderDashboardFromData(data);
-      await loadLeads();
-    } catch {
-      logout();
-    }
+  if (!token) return;
+  try {
+    const data = await api("/dashboard");
+    showApp({ name: "Admin" });
+    // Use the same full loader as a fresh login so filters, dashboard and leads stay in sync.
+    await load();
+  } catch (e) {
+    logout();
   }
 });
-
-function renderDashboardFromData(data) {
-  const stats = document.getElementById("stats");
-
-  const cards = [
-    ["Total Leads", data.total],
-    ["New", data.stats?.New || 0],
-    ["Contacted", data.stats?.Contacted || 0],
-    ["Quote", data.stats?.Quote || 0],
-    ["Won", data.stats?.Won || 0],
-    ["Lost", data.stats?.Lost || 0]
-  ];
-
-  stats.innerHTML = cards.map(([name, value]) => `
-    <div class="stat">
-      <b>${esc(value)}</b>
-      <span>${esc(name)}</span>
-    </div>
-  `).join("");
-};
