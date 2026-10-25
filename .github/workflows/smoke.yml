@@ -1,0 +1,28 @@
+name: App smoke checks
+on:
+  push:
+    branches: [main, production-hardening]
+  pull_request:
+    branches: [main]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node --check server.js
+      - run: |
+          set -e
+          PORT=3187 NODE_ENV=development ADMIN_PASSWORD='Local-test-password-123!' JWT_SECRET='local-test-secret-long-enough-for-smoke-test' node server.js > /tmp/fly-next.log 2>&1 &
+          APP_PID=$!
+          trap 'kill $APP_PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3187/api/health >/tmp/health.json; then break; fi
+            sleep 1
+          done
+          node -e "const h=require('/tmp/health.json'); if(!h.ok || h.app!=='Fly Next Social Hub') process.exit(1)"
+          curl -fsS -X POST http://127.0.0.1:3187/api/auth/login -H 'content-type: application/json' -d '{"email":"admin@flynext.pk","password":"Local-test-password-123!"}' >/tmp/login.json
+          node -e "const d=require('/tmp/login.json'); if(!d.token || !d.user) process.exit(1)"
