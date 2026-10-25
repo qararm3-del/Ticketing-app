@@ -297,12 +297,13 @@ function renderDetail() {
     </div>
 
     <div class="composer">
+      <p class="meta">Replies are saved in this dashboard only. Sending to social platforms is not connected yet.</p>
       <textarea
         id="replyText"
-        placeholder="Type your reply..."
+        placeholder="Write a reply draft..."
       ></textarea>
 
-      <button onclick="sendReply()">Send</button>
+      <button onclick="sendReply()">Save reply draft</button>
     </div>
   `;
 }
@@ -322,7 +323,7 @@ function renderMessages(messages) {
 
   box.innerHTML = messages.map(m => `
     <div class="msg">
-      <b>${m.direction === "outbound" ? "You" : "Customer"}</b>
+      <b>${m.direction === "outbound" ? "Saved draft" : "Customer"}</b>
       <div>${esc(m.body)}</div>
       <div class="meta">${esc(m.channel)}</div>
     </div>
