@@ -119,6 +119,8 @@ async function load() {
     await loadLeads();
   } catch (e) {
     console.error(e);
+    const box = document.getElementById("leads");
+    if (box) box.innerHTML = `<div class="empty">${esc(e.message || "Unable to load ticket leads. Please sign in again.")}</div>`;
   }
 }
 
@@ -242,6 +244,8 @@ async function loadLeads() {
 
   } catch (e) {
     console.error(e);
+    const box = document.getElementById("leads");
+    if (box) box.innerHTML = `<div class="empty">${esc(e.message || "Unable to load ticket leads.")}</div>`;
   }
 }
 
@@ -260,6 +264,7 @@ async function selectLead(id) {
     await loadLeads();
   } catch (e) {
     console.error(e);
+    alert("Ticket detail load nahi ho saka: " + e.message);
   }
 }
 
