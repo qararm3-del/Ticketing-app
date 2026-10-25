@@ -6,6 +6,10 @@ if(process.env.NODE_ENV==="production" && (!JWT_SECRET || JWT_SECRET.length<32))
   console.error("FATAL: Set JWT_SECRET to a random value of at least 32 characters in production.");
   process.exit(1);
 }
+if(process.env.NODE_ENV==="production" && !process.env.DATABASE_URL) {
+  console.error("FATAL: Set DATABASE_URL to a persistent PostgreSQL database in production.");
+  process.exit(1);
+}
 if(process.env.NODE_ENV==="production" && !process.env.ADMIN_PASSWORD) {
   console.error("FATAL: Set ADMIN_PASSWORD before production deployment.");
   process.exit(1);
@@ -20,7 +24,7 @@ const categories=["Fresh Ticket","Reissue","Date Change","Sector Change","Fare",
 app.get("/api/health",async(req,res)=>{
   let database=false;
   if(pool){try{await pool.query("SELECT 1");database=true}catch(e){console.error("Health check database error:",e.message)}}
-  res.status(database?200:503).json({ok:true,app:"Fly Next Social Hub",database,persistence:database?"postgresql":"temporary-memory",production:process.env.NODE_ENV==="production"});
+  res.status(database?200:503).json({ok:database,app:"Fly Next Social Hub",database,persistence:database?"postgresql":"temporary-memory",production:process.env.NODE_ENV==="production"});
 });
 app.post("/api/auth/login",async(req,res)=>{const{email,password}=req.body||{};let u=pool?(await db("SELECT id,name,email,password_hash,role FROM users WHERE email=$1",[email]))[0]:memory.users.find(x=>x.email===email);if(!u||!(await bcrypt.compare(password||"",u.password_hash||u.passwordHash)))return res.status(401).json({error:"Invalid email or password"});const safe={id:u.id,name:u.name,email:u.email,role:u.role};res.json({token:jwt.sign(safe,JWT_SECRET,{expiresIn:"12h"}),user:safe})});
 app.get("/api/dashboard",auth,async(req,res)=>{const l=pool?await db("SELECT * FROM leads ORDER BY created_at DESC"):memory.leads;res.json({stats:Object.fromEntries(statuses.map(s=>[s,l.filter(x=>x.status===s).length])),total:l.length,recent:l.slice(0,8)})});
