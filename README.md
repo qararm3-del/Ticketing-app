@@ -8,7 +8,7 @@ Unified ticketing/social lead inbox for Fly Next.
 - Fresh Ticket, Reissue, Date Change, Sector Change, Fare, Availability and Refund categories
 - New, Contacted, Quote, Won and Lost pipeline
 - WhatsApp, Facebook, Instagram, TikTok, YouTube and Manual channel labels
-- Search, filters, lead assignment and conversation/reply composer
+- Search, filters, lead assignment and conversation/reply draft composer
 - PostgreSQL persistence and automatic table creation
 - Meta webhook verification endpoint (message ingestion still requires implementation and Meta configuration)
 - Responsive mobile dashboard
@@ -31,4 +31,4 @@ Unified ticketing/social lead inbox for Fly Next.
 - Back up the PostgreSQL database before production schema changes.
 
 ## Current integration limits
-The app can track leads manually and record replies in its database. Actual Facebook/Instagram/WhatsApp/TikTok/YouTube message ingestion and sending are **not yet connected**; valid provider app setup, tokens, webhook subscriptions, and provider-specific API handlers are still required. The current Meta POST webhook returns an explicit not-implemented response rather than pretending messages were saved.
+The app can track leads manually and save reply drafts in its database. Drafts are not sent to social platforms. Actual Facebook/Instagram/WhatsApp/TikTok/YouTube message ingestion and sending are **not yet connected**; valid provider app setup, tokens, webhook subscriptions, and provider-specific API handlers are still required. The current Meta POST webhook returns an explicit not-implemented response rather than pretending messages were saved.
