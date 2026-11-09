@@ -133,11 +133,20 @@ function recordFailedLogin(key) {
   else entry.count += 1;
 }
 
-app.get("/api/health", (req, res) => res.json({
-  ok: true,
-  app: "Fly Next Social Hub",
-  database: !!pool,
-  environment: IS_PRODUCTION ? "production" : "development"
+app.get("/api/health", asyncHandler(async (req, res) => {
+  let database = false;
+  if (pool) {
+    await pool.query("SELECT 1");
+    database = true;
+  }
+  const ok = !IS_PRODUCTION || database;
+  res.status(ok ? 200 : 503).json({
+    ok,
+    app: "Fly Next Social Hub",
+    database,
+    persistence: database ? "postgresql" : "temporary-memory",
+    environment: IS_PRODUCTION ? "production" : "development"
+  });
 }));
 
 app.post("/api/auth/login", loginRateLimit, asyncHandler(async (req, res) => {
