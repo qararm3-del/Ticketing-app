@@ -235,7 +235,7 @@ function renderDetail() {
       </select></div>
     </div>
     <div class="detail-body" id="messages">Loading conversation...</div>
-    <div class="composer"><textarea id="replyText" placeholder="Type your reply..."></textarea><button onclick="sendReply()">Send</button></div>
+    <div class="composer"><div class="meta">Replies are saved as drafts in this dashboard. Social-platform sending is not connected yet.</div><textarea id="replyText" placeholder="Write a reply draft..."></textarea><button onclick="sendReply()">Save reply draft</button></div>
   `;
 }
 
@@ -247,7 +247,7 @@ function renderMessages(messages) {
     return;
   }
   box.innerHTML = messages.map(m => `
-    <div class="msg"><b>${m.direction === "outbound" ? "You" : "Customer"}</b><div>${esc(m.body)}</div><div class="meta">${esc(m.channel)}</div></div>
+    <div class="msg"><b>${m.direction === "outbound" ? "Saved draft" : "Customer"}</b><div>${esc(m.body)}</div><div class="meta">${esc(m.channel)}</div></div>
   `).join("");
 }
 
