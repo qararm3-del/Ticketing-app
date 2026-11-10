@@ -1,0 +1,45 @@
+name: Deploy Fly Next to Cloudflare Workers
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Validate source
+        run: npm run check
+      - name: Configure Hyperdrive binding
+        env:
+          HYPERDRIVE_ID: ${{ secrets.CF_HYPERDRIVE_ID }}
+        run: |
+          test -n "$HYPERDRIVE_ID"
+          node -e 'const fs=require("fs");const p="wrangler.jsonc";const s=fs.readFileSync(p,"utf8");if(!s.includes("REPLACE_WITH_CLOUDFLARE_HYPERDRIVE_ID"))throw new Error("Hyperdrive placeholder missing");fs.writeFileSync(p,s.replace("REPLACE_WITH_CLOUDFLARE_HYPERDRIVE_ID",process.env.HYPERDRIVE_ID));'
+      - name: Upload Worker secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          JWT_SECRET: ${{ secrets.FLYNEXT_JWT_SECRET }}
+          BOOTSTRAP_SECRET: ${{ secrets.FLYNEXT_BOOTSTRAP_SECRET }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          META_VERIFY_TOKEN: ${{ secrets.META_VERIFY_TOKEN }}
+        run: |
+          set -e
+          for key in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID JWT_SECRET BOOTSTRAP_SECRET META_APP_SECRET META_VERIFY_TOKEN; do
+            test -n "${!key}" || { echo "Missing required GitHub secret: $key"; exit 1; }
+          done
+          printf '%s' "$JWT_SECRET" | npx wrangler secret put JWT_SECRET
+          printf '%s' "$BOOTSTRAP_SECRET" | npx wrangler secret put BOOTSTRAP_SECRET
+          printf '%s' "$META_APP_SECRET" | npx wrangler secret put META_APP_SECRET
+          printf '%s' "$META_VERIFY_TOKEN" | npx wrangler secret put META_VERIFY_TOKEN
+      - name: Deploy Worker and static assets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: npx wrangler deploy --config wrangler.jsonc
