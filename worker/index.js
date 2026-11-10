@@ -114,6 +114,35 @@ export default {
       return new Response("Fly Next Social Hub assets are not configured.", { status: 404 });
     }
 
+    if (method === "POST" && path === "/api/auth/bootstrap") {
+      const supplied = request.headers.get("x-bootstrap-secret") || "";
+      const expected = env.BOOTSTRAP_SECRET || "";
+      const a = new TextEncoder().encode(supplied);
+      const b = new TextEncoder().encode(expected);
+      if (!expected || a.length !== b.length || !timingSafeEqual(a, b)) return json({ error: "Bootstrap authorization failed." }, 403);
+      const data = await body(request);
+      const email = String(data.email || "").trim().toLowerCase();
+      const password = String(data.password || "");
+      const name = String(data.name || "Fly Next Admin").trim().slice(0,120);
+      if (!email || !password || password.length < 12 || email.length > 254) return json({ error: "Valid email and a password of at least 12 characters are required." }, 400);
+      try {
+        const user = await withDb(env, async c => {
+          await c.query("BEGIN");
+          try {
+            await c.query("SELECT pg_advisory_xact_lock(78124591)");
+            const count = Number((await c.query("SELECT COUNT(*)::int AS count FROM users")).rows[0].count);
+            if (count !== 0) { await c.query("ROLLBACK"); return null; }
+            const hash = await bcrypt.hash(password, 12);
+            const row = (await c.query("INSERT INTO users(name,email,password_hash,role) VALUES($1,$2,$3,'admin') RETURNING id,name,email,role",[name || "Fly Next Admin",email,hash])).rows[0];
+            await c.query("COMMIT");
+            return row;
+          } catch (e) { await c.query("ROLLBACK"); throw e; }
+        });
+        if (!user) return json({ error: "An administrator already exists. Bootstrap is closed." }, 409);
+        return json({ created: true, user: safeUser(user), token: sign(user, env) }, 201);
+      } catch { return json({ error: "Admin bootstrap failed. Check database configuration." }, 503); }
+    }
+
     if (method === "POST" && path === "/api/auth/login") {
       const data = await body(request);
       const email = String(data.email || "").trim().toLowerCase();
