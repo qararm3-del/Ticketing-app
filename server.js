@@ -303,10 +303,68 @@ app.get("/webhooks/meta", (req, res) => {
   const mode = req.query["hub.mode"];
   const verifyToken = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-  if (mode === "subscribe" && process.env.META_VERIFY_TOKEN && verifyToken === process.env.META_VERIFY_TOKEN) return res.status(200).send(challenge);
+  if (!process.env.META_VERIFY_TOKEN) return res.status(503).send("Webhook verification is not configured.");
+  if (mode === "subscribe" && verifyToken === process.env.META_VERIFY_TOKEN) return res.status(200).send(String(challenge || ""));
   return res.sendStatus(403);
 });
-app.post("/webhooks/meta", (req, res) => res.status(501).json({ error: "Webhook receipt is not connected to lead ingestion yet." }));
+
+function verifyMetaSignature(req) {
+  const secret = process.env.META_APP_SECRET;
+  const signature = String(req.headers["x-hub-signature-256"] || "");
+  if (!secret || !signature.startsWith("sha256=") || !req.rawBody) return false;
+  const expected = "sha256=" + crypto.createHmac("sha256", secret).update(req.rawBody).digest("hex");
+  const actualBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function extractMetaMessages(payload) {
+  const inbound = [];
+  if (payload?.object === "whatsapp_business_account") {
+    for (const entry of payload.entry || []) for (const change of entry.changes || []) {
+      const value = change.value || {};
+      const contacts = new Map((value.contacts || []).map(c => [c.wa_id, c.profile?.name || c.wa_id]));
+      for (const message of value.messages || []) {
+        const body = message.text?.body || message.button?.text || message.interactive?.button_reply?.title || message.interactive?.list_reply?.title || "";
+        if (message.from && body) inbound.push({ id: message.id, name: contacts.get(message.from) || message.from, channel: "WhatsApp", body });
+      }
+    }
+  } else {
+    const channel = payload?.object === "instagram" ? "Instagram" : "Facebook";
+    for (const entry of payload?.entry || []) for (const event of entry.messaging || []) {
+      const body = event.message?.text || "";
+      if (event.sender?.id && body && !event.message?.is_echo) inbound.push({ id: event.message?.mid, name: event.sender.id, channel, body });
+    }
+  }
+  return inbound;
+}
+
+app.post("/webhooks/meta", asyncHandler(async (req, res) => {
+  if (!pool) return res.status(503).json({ error: "Persistent database is not available." });
+  if (!verifyMetaSignature(req)) return res.status(401).json({ error: "Invalid webhook signature." });
+  const inbound = extractMetaMessages(req.body);
+  if (!inbound.length) return res.status(200).json({ received: true, created: 0 });
+  const client = await pool.connect();
+  let created = 0;
+  try {
+    await client.query("BEGIN");
+    for (const item of inbound) {
+      const eventId = item.id || crypto.createHash("sha256").update([item.channel, item.name, item.body].join("|")).digest("hex");
+      const accepted = await client.query("INSERT INTO webhook_events(provider,event_id) VALUES($1,$2) ON CONFLICT(provider,event_id) DO NOTHING RETURNING id", ["meta", eventId]);
+      if (!accepted.rowCount) continue;
+      const lead = await client.query("INSERT INTO leads(customer_name,channel,category,route,message,status,assigned_to) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id", [String(item.name).slice(0,160), item.channel, "Fresh Ticket", "", String(item.body).slice(0,3000), "New", "Admin"]);
+      await client.query("INSERT INTO messages(lead_id,direction,channel,body) VALUES($1,$2,$3,$4)", [lead.rows[0].id, "inbound", item.channel, String(item.body).slice(0,3000)]);
+      created += 1;
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  return res.status(200).json({ received: true, created });
+}));
 
 app.use("/api", (req, res) => res.status(404).json({ error: "API endpoint not found." }));
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
