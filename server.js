@@ -269,6 +269,22 @@ app.post("/api/leads/:id/messages", auth, asyncHandler(async (req, res) => {
   res.status(201).json(message);
 }));
 
+// Airline updates: read-only authenticated feed. Source records and collected notices live in Neon.
+app.get("/api/airline-updates", auth, asyncHandler(async (req, res) => {
+  if (!pool) return res.json({ updates: [], sources: [], message: "Database is not connected." });
+  const airline = String(req.query.airline || "").toUpperCase();
+  const category = String(req.query.category || "");
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+  const params = [];
+  let where = [];
+  if (["QR","EY","SV"].includes(airline)) { params.push(airline); where.push("airline_code=$" + params.length); }
+  if (category) { params.push(category); where.push("category=$" + params.length); }
+  params.push(limit);
+  const updates = await db("SELECT id, airline_code, category, headline, summary, source_url, source_name, source_published_at, first_seen_at, verification_status FROM airline_updates " + (where.length ? "WHERE " + where.join(" AND ") : "") + " ORDER BY COALESCE(source_published_at, first_seen_at) DESC LIMIT $" + params.length, params);
+  const sources = await db("SELECT airline_code, source_name, source_url, source_type, enabled, last_checked_at, last_success_at, last_error FROM airline_update_sources WHERE enabled=TRUE ORDER BY airline_code, source_name");
+  res.json({ updates, sources });
+}));
+
 app.get("/api/meta/status", auth, (req, res) => res.json({
   whatsapp: !!process.env.WHATSAPP_ACCESS_TOKEN,
   facebook: !!process.env.META_ACCESS_TOKEN,
