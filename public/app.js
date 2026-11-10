@@ -350,3 +350,32 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 });
+
+async function showSection(section) {
+  document.getElementById("inboxSection").classList.toggle("hidden", section !== "inbox");
+  document.getElementById("airlineSection").classList.toggle("hidden", section !== "airlines");
+  document.getElementById("navInbox").classList.toggle("nav-active", section === "inbox");
+  document.getElementById("navAirline").classList.toggle("nav-active", section === "airlines");
+  if (section === "airlines") await loadAirlineUpdates();
+}
+async function loadAirlineUpdates() {
+  if (!token) return;
+  const box = document.getElementById("airlineUpdates");
+  const sourceBox = document.getElementById("airlineSourceList");
+  if (!box) return;
+  box.textContent = "Loading saved airline updates…";
+  const params = new URLSearchParams();
+  const airline = document.getElementById("airlineFilter")?.value || "";
+  const category = document.getElementById("airlineCategoryFilter")?.value || "";
+  if (airline) params.set("airline", airline);
+  if (category) params.set("category", category);
+  try {
+    const data = await api("/airline-updates?" + params.toString());
+    sourceBox.innerHTML = (data.sources || []).map(s => `<a class="source-chip" href="${esc(s.source_url)}" target="_blank" rel="noopener noreferrer">${esc(s.airline_code)} · ${esc(s.source_name)}</a>`).join("");
+    if (!data.updates?.length) {
+      box.innerHTML = '<div class="empty updates-empty">No collected notices yet.<br><small>Official source links are listed above. Automatic collection is not active yet.</small></div>';
+      return;
+    }
+    box.innerHTML = data.updates.map(u => `<article class="update-card"><div class="update-meta"><b>${esc(u.airline_code)}</b><span>${esc(u.category)}</span><span>${esc(u.verification_status)}</span></div><h3>${esc(u.headline)}</h3><p>${esc(u.summary)}</p><div class="update-foot">${esc(u.source_name)} · ${esc(u.source_published_at || u.first_seen_at)}</div><a href="${esc(u.source_url)}" target="_blank" rel="noopener noreferrer">Open official source</a></article>`).join("");
+  } catch (e) { box.textContent = "Unable to load airline updates: " + e.message; }
+}
