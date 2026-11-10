@@ -14,6 +14,7 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const JWT_SECRET = process.env.JWT_SECRET || (IS_PRODUCTION ? "" : "local-development-only-secret-change-before-deploying");
 const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || "admin@flynext.pk").trim().toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+const ADMIN_NAME = String(process.env.ADMIN_NAME || "Fly Next Admin").trim().slice(0,120);
 const allowedOrigins = String(process.env.ALLOWED_ORIGINS || "").split(",").map(x => x.trim()).filter(Boolean);
 
 if (IS_PRODUCTION) {
@@ -89,10 +90,11 @@ async function initDb() {
   );
   const count = await pool.query("SELECT COUNT(*)::int AS count FROM users");
   if (count.rows[0].count === 0) {
+    if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 12) throw new Error("ADMIN_PASSWORD (at least 12 characters) is required to bootstrap the first admin.");
     const hash = await bcrypt.hash(ADMIN_PASSWORD, 12);
     await pool.query(
       "INSERT INTO users(name, email, password_hash, role) VALUES($1, $2, $3, $4)",
-      ["Admin", ADMIN_EMAIL, hash, "admin"]
+      [ADMIN_NAME || "Fly Next Admin", ADMIN_EMAIL, hash, "admin"]
     );
     console.log("Initial admin account created from environment configuration.");
   }
