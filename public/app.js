@@ -340,8 +340,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   if (token) {
     try {
+      const session = await api("/auth/me");
       const data = await api("/dashboard");
-      showApp({ name: "Admin" });
+      showApp(session.user);
       setupFilters();
       renderDashboardFromData(data);
       await loadLeads();
