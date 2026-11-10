@@ -14,11 +14,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
       - name: Install dependencies
         run: npm install --ignore-scripts
       - name: Check backend syntax
         run: node --check server.js
       - name: Check frontend syntax
         run: node --check public/app.js
+      - name: Check Cloudflare Worker syntax
+        run: node --check worker/index.mjs
       - name: Check package metadata
-        run: node -e "const p=require('./package.json'); if(!p.scripts.start || !p.dependencies.express || !p.dependencies.pg) process.exit(1)"
+        run: node -e "const p=require('./package.json'); if(!p.scripts.start || !p.dependencies.express || !p.dependencies.pg || !p.devDependencies.wrangler) process.exit(1)"
