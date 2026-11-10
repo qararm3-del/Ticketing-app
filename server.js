@@ -38,7 +38,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : false }));
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: "100kb", verify: (req, res, buffer) => { req.rawBody = Buffer.from(buffer); } }));
 app.use(express.static(path.join(__dirname, "public")));
 
 let pool = null;
@@ -82,7 +82,10 @@ async function initDb() {
     "assigned_to TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW());" +
     "CREATE TABLE IF NOT EXISTS messages (" +
     "id SERIAL PRIMARY KEY, lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE, " +
-    "direction TEXT NOT NULL, channel TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW());"
+    "direction TEXT NOT NULL, channel TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW());" +
+    "CREATE TABLE IF NOT EXISTS webhook_events (" +
+    "id BIGSERIAL PRIMARY KEY, provider TEXT NOT NULL, event_id TEXT NOT NULL, received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), " +
+    "UNIQUE(provider, event_id));"
   );
   const count = await pool.query("SELECT COUNT(*)::int AS count FROM users");
   if (count.rows[0].count === 0) {
@@ -99,7 +102,7 @@ function auth(req, res, next) {
   const header = req.headers.authorization || "";
   if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
   try {
-    req.user = jwt.verify(header.slice(7), JWT_SECRET);
+    req.user = jwt.verify(header.slice(7), JWT_SECRET, { issuer: "fly-next-social-hub", audience: "fly-next-social-hub-users" });
     next();
   } catch {
     return res.status(401).json({ error: "Unauthorized" });
@@ -171,6 +174,8 @@ app.post("/api/auth/login", loginRateLimit, asyncHandler(async (req, res) => {
   const safeUser = { id: user.id, name: user.name, email: user.email, role: user.role };
   return res.json({ token: jwt.sign(safeUser, JWT_SECRET, { expiresIn: "12h", issuer: "fly-next-social-hub", audience: "fly-next-social-hub-users" }), user: safeUser });
 }));
+
+app.get("/api/auth/me", auth, (req, res) => res.json({ user: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role } }));
 
 app.get("/api/dashboard", auth, asyncHandler(async (req, res) => {
   const leads = pool ? await db("SELECT * FROM leads ORDER BY created_at DESC") : memory.leads;
