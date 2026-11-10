@@ -29,7 +29,7 @@
   <div class="header-right"><span id="userName"></span><button class="ghost" onclick="logout()">Logout</button></div>
 </header>
 <main>
-<section class="topbar">
+<nav class="main-nav"><button id="navInbox" class="nav-active" onclick="showSection('inbox')">Ticket Inbox</button><button id="navAirline" onclick="showSection('airlines')">Airline Updates</button></nav><section id="inboxSection"><section class="topbar">
   <div><h1>Unified Inbox</h1><p>Facebook • Instagram • WhatsApp • TikTok • YouTube</p></div>
   <button onclick="openLead()">+ New Ticket Request</button>
 </section>
@@ -48,7 +48,8 @@
   <div id="leads"></div>
 </section>
 <section class="card detail" id="detail"><div class="empty">Select a lead to view conversation.</div></section>
-</section>
+</section></section>
+<section id="airlineSection" class="hidden"><section class="topbar"><div><h1>Airline Updates</h1><p>Official notices · Qatar Airways, Etihad, Saudia</p></div><button onclick="loadAirlineUpdates()">Refresh</button></section><section class="card"><div class="airline-filters"><select id="airlineFilter" onchange="loadAirlineUpdates()"><option value="">All airlines</option><option value="QR">Qatar Airways</option><option value="EY">Etihad Airways</option><option value="SV">Saudia</option></select><select id="airlineCategoryFilter" onchange="loadAirlineUpdates()"><option value="">All categories</option><option>New Flights</option><option>Cancellation</option><option>Delay</option><option>Reroute</option><option>Waiver / Reissue</option><option>Schedule Change</option><option>Other</option></select></div><div id="airlineSourceList" class="source-list"></div><div id="airlineUpdates" class="updates-list"><div class="empty">Loading airline updates…</div></div></section></section>
 </main>
 </div>
 <div id="modal" class="modal hidden">
