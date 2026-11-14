@@ -5,6 +5,7 @@ const cors = require("cors");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const { Pool } = require("pg");
 
 const app = express();
@@ -37,7 +38,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : false }));
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: "1mb", verify: (req, res, buf) => { req.rawBody = Buffer.from(buf); } }));
 app.use(express.static(path.join(__dirname, "public")));
 
 let pool = null;
@@ -52,7 +53,7 @@ if (process.env.DATABASE_URL) {
   pool.on("error", err => console.error("Unexpected PostgreSQL pool error:", err.message));
 }
 
-const memory = { users: [], leads: [], messages: [] };
+const memory = { users: [], leads: [], messages: [], webhookEvents: new Set() };
 if (!pool && !IS_PRODUCTION) {
   memory.leads = [
     { id: 1, customer_name: "Demo Customer", channel: "WhatsApp", category: "Fresh Ticket", route: "PEW-JED", message: "Need fare and availability for tomorrow", status: "New", assigned_to: "Admin", created_at: new Date().toISOString() },
@@ -83,6 +84,12 @@ async function initDb() {
     "id SERIAL PRIMARY KEY, lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE, " +
     "direction TEXT NOT NULL, channel TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW());"
   );
+  await pool.query(`CREATE TABLE IF NOT EXISTS social_connections (id BIGSERIAL PRIMARY KEY, platform TEXT NOT NULL UNIQUE CHECK (platform IN ('facebook','instagram','whatsapp','tiktok','youtube')), provider_account_id TEXT, display_name TEXT, connection_status TEXT NOT NULL DEFAULT 'not_connected', granted_scopes TEXT[] NOT NULL DEFAULT '{}', token_env_key TEXT, last_verified_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS webhook_events (id BIGSERIAL PRIMARY KEY, platform TEXT NOT NULL, event_key TEXT NOT NULL UNIQUE, payload_hash TEXT NOT NULL, received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), processed_at TIMESTAMPTZ, processing_error TEXT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS audit_logs (id BIGSERIAL PRIMARY KEY, actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_webhook_events_platform_received ON webhook_events(platform, received_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC)');
+
   const count = await pool.query("SELECT COUNT(*)::int AS count FROM users");
   if (count.rows[0].count === 0) {
     const hash = await bcrypt.hash(ADMIN_PASSWORD, 12);
@@ -269,12 +276,15 @@ app.post("/api/leads/:id/messages", auth, asyncHandler(async (req, res) => {
   res.status(201).json(message);
 }));
 
-app.get("/api/meta/status", auth, (req, res) => res.json({
-  whatsapp: !!process.env.WHATSAPP_ACCESS_TOKEN,
-  facebook: !!process.env.META_ACCESS_TOKEN,
-  instagram: !!process.env.META_ACCESS_TOKEN,
-  tiktok: !!process.env.TIKTOK_ACCESS_TOKEN,
-  youtube: !!process.env.YOUTUBE_ACCESS_TOKEN
+app.get("/api/meta/status", auth, asyncHandler(async (req, res) => {
+  const platforms = ["facebook", "instagram", "whatsapp", "tiktok", "youtube"];
+  const envKeys = { facebook: "META_ACCESS_TOKEN", instagram: "META_ACCESS_TOKEN", whatsapp: "WHATSAPP_ACCESS_TOKEN", tiktok: "TIKTOK_ACCESS_TOKEN", youtube: "YOUTUBE_ACCESS_TOKEN" };
+  const rows = pool ? await db("SELECT platform, display_name, connection_status, last_verified_at FROM social_connections ORDER BY platform") : [];
+  const saved = new Map(rows.map(row => [row.platform, row]));
+  res.json(Object.fromEntries(platforms.map(platform => {
+    const row = saved.get(platform);
+    return [platform, { credentialsPresent: !!process.env[envKeys[platform]], status: row?.connection_status || "not_connected", account: row?.display_name || null, lastVerifiedAt: row?.last_verified_at || null }];
+  })));
 }));
 
 app.get("/webhooks/meta", (req, res) => {
@@ -284,7 +294,47 @@ app.get("/webhooks/meta", (req, res) => {
   if (mode === "subscribe" && process.env.META_VERIFY_TOKEN && verifyToken === process.env.META_VERIFY_TOKEN) return res.status(200).send(challenge);
   return res.sendStatus(403);
 });
-app.post("/webhooks/meta", (req, res) => res.status(501).json({ error: "Webhook receipt is not connected to lead ingestion yet." }));
+function validMetaSignature(req) {
+  const secret = process.env.META_APP_SECRET;
+  const header = req.get("x-hub-signature-256") || "";
+  if (!secret || !req.rawBody || !header.startsWith("sha256=")) return false;
+  const expected = crypto.createHmac("sha256", secret).update(req.rawBody).digest();
+  let actual;
+  try { actual = Buffer.from(header.slice(7), "hex"); } catch { return false; }
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
+async function saveWhatsAppMessage(message, contact) {
+  const messageId = String(message.id || "");
+  const body = String(message.text?.body || message.button?.text || message.interactive?.button_reply?.title || message.interactive?.list_reply?.title || "").trim();
+  if (!messageId || !body) return;
+  const customer = String(message.from || contact?.wa_id || "WhatsApp customer").slice(0, 160);
+  const digest = crypto.createHash("sha256").update(messageId).digest("hex");
+  if (pool) {
+    const event = await db("INSERT INTO webhook_events(platform,event_key,payload_hash,processed_at) VALUES('whatsapp',$1,$2,NOW()) ON CONFLICT(event_key) DO NOTHING RETURNING id", [messageId, digest]);
+    if (!event.length) return;
+    const lead = await db("INSERT INTO leads(customer_name,channel,category,message,status,assigned_to) VALUES($1,'WhatsApp','Fresh Ticket',$2,'New','Admin') RETURNING id", [customer, body.slice(0,3000)]);
+    await db("INSERT INTO messages(lead_id,direction,channel,body) VALUES($1,'inbound','WhatsApp',$2)", [lead[0].id, body.slice(0,3000)]);
+  } else {
+    if (memory.webhookEvents.has(messageId)) return;
+    memory.webhookEvents.add(messageId);
+    const id = Math.max(0, ...memory.leads.map(x => x.id)) + 1;
+    memory.leads.unshift({ id, customer_name: customer, channel: "WhatsApp", category: "Fresh Ticket", route: "", message: body.slice(0,3000), status: "New", assigned_to: "Admin", created_at: new Date().toISOString() });
+    memory.messages.push({ id: memory.messages.length + 1, lead_id: id, direction: "inbound", channel: "WhatsApp", body: body.slice(0,3000), created_at: new Date().toISOString() });
+  }
+}
+app.post("/webhooks/meta", asyncHandler(async (req, res) => {
+  if (!validMetaSignature(req)) return res.sendStatus(401);
+  const payload = req.body || {};
+  if (payload.object !== "whatsapp_business_account") return res.sendStatus(404);
+  for (const entry of payload.entry || []) for (const change of entry.changes || []) {
+    const value = change.value || {};
+    for (const message of value.messages || []) {
+      const contact = (value.contacts || []).find(item => item.wa_id === message.from);
+      await saveWhatsAppMessage(message, contact);
+    }
+  }
+  return res.sendStatus(200);
+}));
 
 app.use("/api", (req, res) => res.status(404).json({ error: "API endpoint not found." }));
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
