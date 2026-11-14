@@ -111,6 +111,7 @@ async function load() {
   try {
     setupFilters();
     await loadDashboard();
+    await loadIntegrations();
     await loadLeads();
   } catch (e) {
     console.error(e);
@@ -344,9 +345,28 @@ window.addEventListener("DOMContentLoaded", async () => {
       showApp({ name: "Admin" });
       setupFilters();
       renderDashboardFromData(data);
+      await loadIntegrations();
       await loadLeads();
     } catch {
       logout();
     }
   }
 });
+
+async function loadIntegrations() {
+  const box = document.getElementById("integrationStatus");
+  if (!box) return;
+  try {
+    const data = await api("/meta/status");
+    const labels = { whatsapp: "WhatsApp", facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube" };
+    box.innerHTML = Object.entries(labels).map(([key, label]) => {
+      const item = data[key] || {};
+      const ready = item.status === "connected";
+      const configured = !!item.credentialsPresent;
+      const state = ready ? "Connected" : configured ? "Credentials added — not verified" : "Not connected";
+      return '<div class="integration-item"><b>' + esc(label) + '</b><span class="integration-state ' + (ready ? "ready" : "") + '">' + esc(state) + '</span></div>';
+    }).join("");
+  } catch (error) {
+    box.innerHTML = '<div class="meta">Could not load channel status.</div>';
+  }
+}
