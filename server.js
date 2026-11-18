@@ -85,7 +85,18 @@ async function initDb() {
     "direction TEXT NOT NULL, channel TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW());"
   );
   await pool.query(`CREATE TABLE IF NOT EXISTS social_connections (id BIGSERIAL PRIMARY KEY, platform TEXT NOT NULL UNIQUE CHECK (platform IN ('facebook','instagram','whatsapp','tiktok','youtube')), provider_account_id TEXT, display_name TEXT, connection_status TEXT NOT NULL DEFAULT 'not_connected', granted_scopes TEXT[] NOT NULL DEFAULT '{}', token_env_key TEXT, last_verified_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
-  await pool.query(`CREATE TABLE IF NOT EXISTS webhook_events (id BIGSERIAL PRIMARY KEY, platform TEXT NOT NULL, event_key TEXT NOT NULL UNIQUE, payload_hash TEXT NOT NULL, received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), processed_at TIMESTAMPTZ, processing_error TEXT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS webhook_events (id BIGSERIAL PRIMARY KEY, platform TEXT NOT NULL DEFAULT 'whatsapp', event_key TEXT NOT NULL UNIQUE, payload_hash TEXT NOT NULL DEFAULT '', received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), processed_at TIMESTAMPTZ, processing_error TEXT, provider TEXT NOT NULL DEFAULT 'whatsapp', event_id TEXT NOT NULL DEFAULT ('legacy-' || md5(random()::text || clock_timestamp()::text)))`);
+  // Backward-compatible migration for databases created by the earlier airline-alert schema.
+  // Keep legacy provider/event_id NOT NULL columns populated while the app uses platform/event_key.
+  await pool.query(`ALTER TABLE webhook_events
+    ADD COLUMN IF NOT EXISTS platform TEXT NOT NULL DEFAULT 'whatsapp',
+    ADD COLUMN IF NOT EXISTS event_key TEXT,
+    ADD COLUMN IF NOT EXISTS payload_hash TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS processed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS processing_error TEXT,
+    ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'whatsapp',
+    ADD COLUMN IF NOT EXISTS event_id TEXT NOT NULL DEFAULT ('legacy-' || md5(random()::text || clock_timestamp()::text))`);
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS webhook_events_event_key_key ON webhook_events(event_key)');
   await pool.query(`CREATE TABLE IF NOT EXISTS audit_logs (id BIGSERIAL PRIMARY KEY, actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_webhook_events_platform_received ON webhook_events(platform, received_at DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC)');
