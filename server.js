@@ -96,6 +96,9 @@ async function initDb() {
     ADD COLUMN IF NOT EXISTS processing_error TEXT,
     ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'whatsapp',
     ADD COLUMN IF NOT EXISTS event_id TEXT NOT NULL DEFAULT ('legacy-' || md5(random()::text || clock_timestamp()::text))`);
+  await pool.query(`ALTER TABLE webhook_events
+    ALTER COLUMN provider SET DEFAULT 'whatsapp',
+    ALTER COLUMN event_id SET DEFAULT ('legacy-' || md5(random()::text || clock_timestamp()::text))`);
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS webhook_events_event_key_key ON webhook_events(event_key)');
   await pool.query(`CREATE TABLE IF NOT EXISTS audit_logs (id BIGSERIAL PRIMARY KEY, actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_webhook_events_platform_received ON webhook_events(platform, received_at DESC)');
