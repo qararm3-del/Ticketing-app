@@ -3,16 +3,27 @@
   "name": "fly-next-social-hub",
   "main": "cloudflare-worker.js",
   "compatibility_date": "2026-11-21",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env"
+  ],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/webhooks/*"]
+    "run_worker_first": [
+      "/api/*",
+      "/webhooks/*"
+    ]
   },
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
       "id": "REPLACE_WITH_CLOUDFLARE_HYPERDRIVE_ID"
     }
-  ]
+  ],
+  "vars": {
+    "NODE_ENV": "production",
+    "ADMIN_EMAIL": "admin@flynext.pk",
+    "DATABASE_SSL": "true"
+  }
 }
