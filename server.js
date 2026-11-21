@@ -39,7 +39,7 @@ app.use((req, res, next) => {
 });
 app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : false }));
 app.use(express.json({ limit: "1mb", verify: (req, res, buf) => { req.rawBody = Buffer.from(buf); } }));
-app.use(express.static(path.join(__dirname, "public")));
+if (!process.env.CLOUDFLARE_WORKERS) app.use(express.static(path.join(__dirname, "public")));
 
 let pool = null;
 if (process.env.DATABASE_URL) {
@@ -376,16 +376,23 @@ app.post("/webhooks/meta", asyncHandler(async (req, res) => {
 }));
 
 app.use("/api", (req, res) => res.status(404).json({ error: "API endpoint not found." }));
-app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+if (!process.env.CLOUDFLARE_WORKERS) app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.use((err, req, res, next) => {
   console.error("Request failed:", err.message);
   if (res.headersSent) return next(err);
   res.status(500).json({ error: "Internal server error." });
 });
 
-initDb()
-  .then(() => app.listen(PORT, () => console.log("Fly Next Social Hub running on port " + PORT)))
-  .catch(error => {
+async function startServer() {
+  await initDb();
+  return app.listen(PORT, () => console.log("Fly Next Social Hub running on port " + PORT));
+}
+
+if (require.main === module) {
+  startServer().catch(error => {
     console.error("Startup/database initialization failed:", error.message);
     process.exit(1);
   });
+}
+
+module.exports = { app, initDb, startServer };
