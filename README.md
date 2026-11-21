@@ -40,3 +40,20 @@ Facebook and Instagram inbox ingestion, plus TikTok and YouTube ingestion, need 
 
 ## Health
 `GET /api/health` reports app and database connectivity. In production it returns HTTP 503 if PostgreSQL is unavailable.
+
+
+## Cloudflare Workers deployment (free-tier route)
+
+This branch includes a Cloudflare Workers adapter for the existing Express app. It keeps Neon PostgreSQL as the database and uses Cloudflare Hyperdrive for the database connection.
+
+Before the first deploy:
+
+1. Create a Cloudflare account and connect this repository, selecting the `cloudflare-deploy` branch.
+2. In Cloudflare, create a Hyperdrive configuration connected to the existing Neon database. Use a dedicated Neon database role for the Hyperdrive connection, and use the direct (non-pooled) Neon connection string when creating Hyperdrive.
+3. Replace `REPLACE_WITH_CLOUDFLARE_HYPERDRIVE_ID` in `wrangler.jsonc` with the Hyperdrive configuration ID.
+4. Add these Worker secrets in the Cloudflare dashboard: `JWT_SECRET` (32+ random characters), `ADMIN_EMAIL`, and `ADMIN_PASSWORD` (12+ characters). Add Meta/WhatsApp provider secrets only when those integrations are configured.
+5. Deploy the Worker. Confirm `/api/health` reports both `ok: true` and `database: true`.
+
+The dashboard's static files are served by the Workers Assets binding; API and webhook routes run through the Express Worker adapter. The existing `main` branch is left unchanged by this deployment branch.
+
+Social platform connections still require the relevant provider app approvals, scopes, tokens, and webhook subscriptions. A deployment alone does not activate Facebook, Instagram, TikTok, YouTube, or WhatsApp integrations.
