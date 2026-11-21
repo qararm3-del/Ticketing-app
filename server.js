@@ -119,7 +119,7 @@ function auth(req, res, next) {
   const header = req.headers.authorization || "";
   if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
   try {
-    req.user = jwt.verify(header.slice(7), JWT_SECRET);
+    req.user = jwt.verify(header.slice(7), JWT_SECRET, { issuer: "fly-next-social-hub", audience: "fly-next-social-hub-users" });
     next();
   } catch {
     return res.status(401).json({ error: "Unauthorized" });
@@ -318,23 +318,48 @@ function validMetaSignature(req) {
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 async function saveWhatsAppMessage(message, contact) {
-  const messageId = String(message.id || "");
+  const messageId = String(message.id || "").slice(0, 255);
   const body = String(message.text?.body || message.button?.text || message.interactive?.button_reply?.title || message.interactive?.list_reply?.title || "").trim();
   if (!messageId || !body) return;
   const customer = String(message.from || contact?.wa_id || "WhatsApp customer").slice(0, 160);
   const digest = crypto.createHash("sha256").update(messageId).digest("hex");
+
   if (pool) {
-    const event = await db("INSERT INTO webhook_events(platform,event_key,payload_hash,processed_at) VALUES('whatsapp',$1,$2,NOW()) ON CONFLICT(event_key) DO NOTHING RETURNING id", [messageId, digest]);
-    if (!event.length) return;
-    const lead = await db("INSERT INTO leads(customer_name,channel,category,message,status,assigned_to) VALUES($1,'WhatsApp','Fresh Ticket',$2,'New','Admin') RETURNING id", [customer, body.slice(0,3000)]);
-    await db("INSERT INTO messages(lead_id,direction,channel,body) VALUES($1,'inbound','WhatsApp',$2)", [lead[0].id, body.slice(0,3000)]);
-  } else {
-    if (memory.webhookEvents.has(messageId)) return;
-    memory.webhookEvents.add(messageId);
-    const id = Math.max(0, ...memory.leads.map(x => x.id)) + 1;
-    memory.leads.unshift({ id, customer_name: customer, channel: "WhatsApp", category: "Fresh Ticket", route: "", message: body.slice(0,3000), status: "New", assigned_to: "Admin", created_at: new Date().toISOString() });
-    memory.messages.push({ id: memory.messages.length + 1, lead_id: id, direction: "inbound", channel: "WhatsApp", body: body.slice(0,3000), created_at: new Date().toISOString() });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const event = await client.query(
+        "INSERT INTO webhook_events(platform,event_key,payload_hash,processed_at) VALUES('whatsapp',$1,$2,NULL) ON CONFLICT(event_key) DO NOTHING RETURNING id",
+        [messageId, digest]
+      );
+      if (!event.rowCount) {
+        await client.query("ROLLBACK");
+        return;
+      }
+      const lead = await client.query(
+        "INSERT INTO leads(customer_name,channel,category,message,status,assigned_to) VALUES($1,'WhatsApp','Fresh Ticket',$2,'New','Admin') RETURNING id",
+        [customer, body.slice(0, 3000)]
+      );
+      await client.query(
+        "INSERT INTO messages(lead_id,direction,channel,body) VALUES($1,'inbound','WhatsApp',$2)",
+        [lead.rows[0].id, body.slice(0, 3000)]
+      );
+      await client.query("UPDATE webhook_events SET processed_at=NOW() WHERE id=$1", [event.rows[0].id]);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+    return;
   }
+
+  if (memory.webhookEvents.has(messageId)) return;
+  memory.webhookEvents.add(messageId);
+  const id = Math.max(0, ...memory.leads.map(x => x.id)) + 1;
+  memory.leads.unshift({ id, customer_name: customer, channel: "WhatsApp", category: "Fresh Ticket", route: "", message: body.slice(0,3000), status: "New", assigned_to: "Admin", created_at: new Date().toISOString() });
+  memory.messages.push({ id: memory.messages.length + 1, lead_id: id, direction: "inbound", channel: "WhatsApp", body: body.slice(0,3000), created_at: new Date().toISOString() });
 }
 app.post("/webhooks/meta", asyncHandler(async (req, res) => {
   if (!validMetaSignature(req)) return res.sendStatus(401);
