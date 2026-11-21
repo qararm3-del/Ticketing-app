@@ -20,7 +20,7 @@
     <input id="password" type="password" placeholder="Enter password" autocomplete="current-password" required maxlength="1024">
     <button type="submit" id="loginButton">Sign in</button>
     <div id="loginError" class="error" role="alert" aria-live="polite"></div>
-    <p class="login-note">Use your configured account credentials. For security, no default password is prefilled.</p>
+    <p class="login-note">Use your configured account credentials. No default password is prefilled.</p>
   </form>
 </div>
 <div id="app" class="hidden">
@@ -34,6 +34,11 @@
   <button onclick="openLead()">+ New Ticket Request</button>
 </section>
 <section id="stats" class="stats"></section>
+<section class="card integrations">
+  <div class="section-head"><h2>Social Channel Connections</h2><span class="meta">Live configuration status</span></div>
+  <div id="integrationStatus" class="integration-grid" aria-live="polite"><div class="meta">Loading channel status…</div></div>
+  <p class="integration-note">A channel shows Connected only after its provider account is verified. Credentials alone do not connect an account.</p>
+</section>
 <section class="layout">
 <aside class="filters card">
   <h3>Filters</h3>
