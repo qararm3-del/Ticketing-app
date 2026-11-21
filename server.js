@@ -383,9 +383,16 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Internal server error." });
 });
 
-initDb()
-  .then(() => app.listen(PORT, () => console.log("Fly Next Social Hub running on port " + PORT)))
-  .catch(error => {
-    console.error("Startup/database initialization failed:", error.message);
-    process.exit(1);
-  });
+const dbReady = initDb();
+app.locals.dbReady = dbReady;
+
+if (require.main === module) {
+  dbReady
+    .then(() => app.listen(PORT, () => console.log("Fly Next Social Hub running on port " + PORT)))
+    .catch(error => {
+      console.error("Startup/database initialization failed:", error.message);
+      process.exit(1);
+    });
+}
+
+module.exports = app;
